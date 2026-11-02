@@ -1,0 +1,62 @@
+project-management-version-2/
+├── backend-node/                        # Active TypeScript Express backend API
+│   ├── prisma/
+│   │   ├── schema.prisma                # Core database schema (985 lines, 33 models, 13 enums)
+│   │   └── seed.ts                      # Database seeding script for organizations, users, roles
+│   ├── src/
+│   │   ├── app.ts                       # Express application entry, CORS, timing hooks, router mounting
+│   │   ├── index.ts                     # HTTP server startup and port listening (port 3001)
+│   │   ├── controllers/
+│   │   │   ├── bug.controller.ts        # Complaint, triage, retest, and evidence endpoints
+│   │   │   ├── project.controller.ts    # Project CRUD, member management, role assignment
+│   │   │   ├── auth.controller.ts       # Login, token refresh, password resets, user sessions
+│   │   │   └── organization.controller.ts # Super Admin cross-tenant operations and audit logs
+│   │   ├── middleware/
+│   │   │   └── auth.middleware.ts       # JWT authentication, caching, requireRole, requireProjectRole
+│   │   ├── routes/
+│   │   │   ├── bug.routes.ts            # Bug portal routes mounted at /api/projects/:projectId/bugs
+│   │   │   ├── project.routes.ts        # Project routes (/api/projects)
+│   │   │   └── organization.routes.ts   # Super Admin routes (/api/organizations)
+│   │   ├── services/
+│   │   │   ├── bug.service.ts           # Core DAILOQA business logic, validation, state transitions
+│   │   │   ├── project.service.ts       # Project membership, allowed project roles, workspace logic
+│   │   │   └── storage.service.ts       # File upload validation, path-traversal prevention, checksums
+│   │   └── lib/
+│   │       ├── prisma.ts                # Prisma singleton instance and connection health check
+│   │       └── redis.ts                 # Redis client configuration and connection health check
+│   └── tests/                           # Unit and integration test suites
+│       ├── unit/
+│       │   ├── bug.service.test.ts      # 60 test cases covering the entire bug lifecycle
+│       │   ├── auth.middleware.test.ts  # Token validation, role checks, permission guards
+│       │   └── project.service.test.ts  # Project membership and role assignments
+│       └── setup.ts                     # Jest environment setup and Prisma mocks
+├── frontend/                            # React 18 single-page application (Vite)
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── modals/
+│   │   │   │   └── AssignProjectRolesModal.jsx # Project role dropdown (12 platform roles)
+│   │   │   └── views/
+│   │   │       └── projects/
+│   │   │           ├── ProjectWorkspaceView.jsx # Workspace navigation and tab renderer
+│   │   │           ├── ProjectBugsTab.jsx       # DAILOQA Bug Management dashboard & filters
+│   │   │           └── bugs/
+│   │   │               ├── CreateComplaintModal.jsx # Universal defect complaint submission modal
+│   │   │               ├── QaReviewModal.jsx        # QA Verification, Info Request, Duplicate modal
+│   │   │               ├── BugDetailModal.jsx       # Defect details, triage, developer state updates
+│   │   │               └── RetestModal.jsx          # QA Retest submission modal (PASS/FAIL)
+│   │   ├── features/
+│   │   │   └── super-admin/
+│   │   │       ├── SuperAdminApp.jsx            # Super Admin container and navigation
+│   │   │       └── views/
+│   │   │           ├── SuperAdminDashboardView.jsx # Tenant metrics, user counts, project stats
+│   │   │           └── SuperAdminAuditLogsView.jsx # Platform-wide security and mutation audit logs
+│   │   ├── services/
+│   │   │   ├── bugs.service.js          # Frontend API client for DAILOQA endpoints
+│   │   │   └── projects.service.js      # Frontend API client for project members and roles
+│   │   ├── utils/
+│   │   │   └── methodology.js           # Workspace tab ordering: Scrum (8 tabs) and Kanban (7 tabs)
+│   │   └── tests/
+│   │       └── project-bugs-tab.test.js # Workspace tab ordering and intern accessibility suite
+│   ├── package.json
+│   └── vite.config.js
+└── backend/                             # Deprecated legacy stub (superseded by backend-node/)

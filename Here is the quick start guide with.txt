@@ -1,0 +1,87 @@
+Here is the quick start guide with the exact commands to run the project on your machine.
+
+---
+
+### Option 1: Local Setup (Recommended)
+
+Since your backend is already connected to your cloud PostgreSQL database (Supabase), running locally with Node is the fastest and easiest method:
+
+#### 1. Start the Backend API (Terminal 1)
+From the project root:
+```powershell
+cd backend-node
+npm run dev
+```
+> **Runs on:** [http://localhost:3001](http://localhost:3001) (API at `/api`)
+
+---
+
+#### 2. Start the Frontend (Terminal 2)
+Open a new terminal at the project root:
+```powershell
+cd frontend
+npm run dev
+```
+> **Runs on:** [http://localhost:3000](http://localhost:3000)
+
+---
+
+#### Running from Project Root (Single-Folder Shortcut)
+You can also run both commands directly from the main project root folder without manually changing directories:
+
+```powershell
+# Terminal 1 (Backend):
+npm run dev:backend
+
+# Terminal 2 (Frontend):
+npm run dev:frontend
+```
+
+---
+
+### One-Time Setup Commands (If Needed)
+
+If you ever pull new code, reset your database, or need to re-seed users and data:
+
+```powershell
+cd backend-node
+
+# 1. Generate Prisma client
+npx prisma generate
+
+# 2. Seed initial data (Admin, Manager, Interns, Projects)
+npx tsx prisma/seed.ts
+```
+
+---
+
+### Option 2: Full Docker Stack (Optional)
+
+If you prefer to run Postgres, Redis, and Backend inside Docker containers:
+
+```powershell
+# 1. From root directory, ensure .env exists:
+Copy-Item .env.example .env
+
+# 2. Build and start containers:
+docker compose up -d --build
+
+# 3. Apply migrations & seed inside container:
+docker compose exec backend npx prisma migrate deploy
+docker compose exec backend npm run seed
+
+# 4. Start frontend locally:
+cd frontend
+npm run dev
+```
+
+---
+
+### Default Login Accounts
+
+| Role | Email | Password | URL |
+|---|---|---|---|
+| **Super Admin** | `superadmin@platform.local` | `SuperAdmin@123` | [http://localhost:3000/super-admin](http://localhost:3000/super-admin) |
+| **Manager** | `manager@dailoqa.com` | `password123` | [http://localhost:3000/manager](http://localhost:3000/manager) |
+| **Tech Lead** | `lead@dailoqa.com` | `password123` | [http://localhost:3000/manager](http://localhost:3000/manager) |
+| **Intern** | `intern@dailoqa.com` | `password123` | [http://localhost:3000/intern](http://localhost:3000/intern) |

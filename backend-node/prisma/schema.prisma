@@ -88,6 +88,17 @@ model User {
   reviewed_extensions    WorkItemExtensionRequest[] @relation("ExtensionReviewer")
   user_permissions       UserPermission[]
   project_ownerships     ProjectOwner[]          @relation("ProjectOwners")
+  reported_bugs          BugReport[]             @relation("BugReporter")
+  assigned_qa_complaints BugReport[]             @relation("BugReportQaAssignee")
+  reviewed_bugs          BugReview[]             @relation("BugReviewer")
+  assigned_bugs          Bug[]                   @relation("BugAssignee")
+  assigned_bug_history   BugAssignment[]         @relation("BugAssignmentRecipient")
+  made_bug_assignments   BugAssignment[]         @relation("BugAssignmentAuthor")
+  conducted_retests      BugRetest[]             @relation("BugRetester")
+  bug_comments           BugComment[]            @relation("BugCommentAuthor")
+  bug_attachments        BugAttachment[]         @relation("BugAttachmentUploader")
+  bug_events             BugEvent[]              @relation("BugEventActor")
+  updated_requirements   DocumentRequirement[]   @relation("RequirementUpdatedBy")
 
   @@unique([organization_id, user_code])
   @@index([cohort_id])
@@ -178,6 +189,7 @@ model Role {
   users           UserRole[]
   permissions     RolePermission[]
   project_members ProjectMember[]
+  member_roles    ProjectMemberRole[]
 
   @@index([organization_id])
   @@index([project_id])
@@ -289,6 +301,9 @@ model Project {
   action_items ActionItem[]
   roles        Role[]
   extension_requests WorkItemExtensionRequest[]
+  bug_reports        BugReport[]
+  bugs               Bug[]
+  bug_attachments    BugAttachment[]
 
   @@map("projects")
 }
@@ -316,9 +331,26 @@ model ProjectMember {
   project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   role    Role?   @relation(fields: [role_id], references: [id], onDelete: SetNull)
+  member_roles ProjectMemberRole[]
 
   @@id([project_id, user_id])
   @@map("project_members")
+}
+
+model ProjectMemberRole {
+  id           String   @id @default(uuid())
+  project_id   String
+  user_id      String
+  role_name    String
+  role_id      String?
+  created_at   DateTime @default(now())
+
+  project_member ProjectMember @relation(fields: [project_id, user_id], references: [project_id, user_id], onDelete: Cascade)
+  role           Role?          @relation(fields: [role_id], references: [id], onDelete: SetNull)
+
+  @@unique([project_id, user_id, role_name])
+  @@index([project_id, user_id])
+  @@map("project_member_roles")
 }
 
 model ProjectDocument {
@@ -331,6 +363,7 @@ model ProjectDocument {
   updated_at    DateTime @updatedAt
 
   project      Project               @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  requirements DocumentRequirement[]
 
   @@map("project_documents")
 }
@@ -592,6 +625,7 @@ model NotificationRecipient {
   read_at         DateTime?
   delivered       Boolean   @default(false)
   created_at      DateTime  @default(now())
+  archived_at     DateTime?
 
   notification Notification @relation(fields: [notification_id], references: [id], onDelete: Cascade)
   user         User         @relation("ReceivedNotifications", fields: [user_id], references: [id], onDelete: Cascade)
@@ -700,4 +734,273 @@ model WorkItemExtensionRequest {
   @@index([status])
   @@index([task_id, status])
   @@map("work_item_extension_requests")
+}
+
+// ── Parent Document Requirements ─────────────────────────────────────────────
+enum RequirementStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
+}
+
+model DocumentRequirement {
+  id                 String            @id @default(uuid())
+  document_id        String
+  code               String?
+  title              String
+  description        String?           @db.Text
+  section            String?
+  status             RequirementStatus @default(PENDING)
+  progress_note      String?           @db.Text
+  current_activity   String?           @db.Text
+  updated_by_user_id String?
+  created_at         DateTime          @default(now())
+  updated_at         DateTime          @updatedAt
+
+  document   ProjectDocument @relation(fields: [document_id], references: [id], onDelete: Cascade)
+  updated_by User?           @relation("RequirementUpdatedBy", fields: [updated_by_user_id], references: [id], onDelete: SetNull)
+
+  @@index([document_id])
+  @@index([updated_by_user_id])
+  @@map("document_requirements")
+}
+
+// ── DAILOQA Bug Management & QA Retest Portal Enums ──────────────────────────
+enum BugSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum BugPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum BugReportStatus {
+  PENDING_REVIEW
+  NEED_INFO
+  VERIFIED
+  REJECTED
+  DUPLICATE
+}
+
+enum BugReviewOutcome {
+  VERIFIED
+  INFO_REQUESTED
+  REJECTED
+  DUPLICATE
+}
+
+enum BugStatus {
+  OPEN
+  TRIAGED
+  ASSIGNED
+  IN_PROGRESS
+  BLOCKED
+  FIXED
+  READY_FOR_RETEST
+  CLOSED
+  REOPENED
+}
+
+enum BugRetestResult {
+  PASS
+  FAIL
+}
+
+// ── DAILOQA Bug Management & QA Retest Portal Models ─────────────────────────
+model BugReport {
+  id                 String          @id @default(uuid())
+  project_id         String
+  reporter_id        String
+  title              String
+  description        String          @db.Text
+  steps_to_reproduce String          @db.Text
+  expected_result    String          @db.Text
+  actual_result      String          @db.Text
+  environment        String?
+  severity           BugSeverity     @default(MEDIUM)
+  assigned_qa_id     String?
+  status             BugReportStatus @default(PENDING_REVIEW)
+  created_at         DateTime        @default(now())
+  updated_at         DateTime        @updatedAt
+
+  project      Project         @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  reporter     User            @relation("BugReporter", fields: [reporter_id], references: [id], onDelete: Cascade)
+  assigned_qa  User?           @relation("BugReportQaAssignee", fields: [assigned_qa_id], references: [id], onDelete: SetNull)
+  reviews      BugReview[]
+  official_bug Bug?            @relation("ReportToBug")
+  comments     BugComment[]
+  attachments  BugAttachment[]
+  events       BugEvent[]
+
+  @@index([project_id])
+  @@index([reporter_id])
+  @@index([assigned_qa_id])
+  @@index([status])
+  @@map("bug_reports")
+}
+
+model BugReview {
+  id              String           @id @default(uuid())
+  bug_report_id   String
+  reviewer_id     String
+  outcome         BugReviewOutcome
+  notes           String           @db.Text
+  duplicate_of_id String?
+  created_at      DateTime         @default(now())
+
+  bug_report   BugReport @relation(fields: [bug_report_id], references: [id], onDelete: Cascade)
+  reviewer     User      @relation("BugReviewer", fields: [reviewer_id], references: [id], onDelete: Cascade)
+  duplicate_of Bug?      @relation("DuplicateReviews", fields: [duplicate_of_id], references: [id], onDelete: SetNull)
+
+  @@index([bug_report_id])
+  @@index([reviewer_id])
+  @@map("bug_reviews")
+}
+
+model Bug {
+  id                  String      @id @default(uuid())
+  project_id          String
+  origin_report_id    String?     @unique
+  bug_code            String
+  title               String
+  description         String      @db.Text
+  status              BugStatus   @default(OPEN)
+  severity            BugSeverity @default(MEDIUM)
+  priority            BugPriority @default(MEDIUM)
+  current_assignee_id String?
+  triage_notes        String?     @db.Text
+  resolution_summary  String?     @db.Text
+  fixed_in_build      String?
+  closed_at           DateTime?
+  created_at          DateTime    @default(now())
+  updated_at          DateTime    @updatedAt
+
+  project           Project         @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  origin_report     BugReport?      @relation("ReportToBug", fields: [origin_report_id], references: [id], onDelete: SetNull)
+  current_assignee  User?           @relation("BugAssignee", fields: [current_assignee_id], references: [id], onDelete: SetNull)
+  assignments       BugAssignment[]
+  retests           BugRetest[]
+  comments          BugComment[]
+  attachments       BugAttachment[]
+  events            BugEvent[]
+  duplicate_reviews BugReview[]     @relation("DuplicateReviews")
+
+  @@unique([project_id, bug_code])
+  @@index([project_id])
+  @@index([status])
+  @@index([current_assignee_id])
+  @@map("bugs")
+}
+
+model BugAssignment {
+  id             String   @id @default(uuid())
+  bug_id         String
+  assignee_id    String
+  assigned_by_id String
+  notes          String?  @db.Text
+  assigned_at    DateTime @default(now())
+
+  bug         Bug  @relation(fields: [bug_id], references: [id], onDelete: Cascade)
+  assignee    User @relation("BugAssignmentRecipient", fields: [assignee_id], references: [id], onDelete: Cascade)
+  assigned_by User @relation("BugAssignmentAuthor", fields: [assigned_by_id], references: [id], onDelete: Cascade)
+
+  @@index([bug_id])
+  @@index([assignee_id])
+  @@map("bug_assignments")
+}
+
+model BugRetest {
+  id             String          @id @default(uuid())
+  bug_id         String
+  retester_id    String
+  attempt_number Int
+  tested_build   String
+  result         BugRetestResult
+  notes          String          @db.Text
+  status_before  BugStatus
+  status_after   BugStatus
+  created_at     DateTime        @default(now())
+
+  bug         Bug             @relation(fields: [bug_id], references: [id], onDelete: Cascade)
+  retester    User            @relation("BugRetester", fields: [retester_id], references: [id], onDelete: Cascade)
+  attachments BugAttachment[]
+
+  @@index([bug_id])
+  @@index([retester_id])
+  @@map("bug_retests")
+}
+
+model BugComment {
+  id            String   @id @default(uuid())
+  bug_id        String?
+  bug_report_id String?
+  author_id     String
+  content       String   @db.Text
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  bug        Bug?       @relation(fields: [bug_id], references: [id], onDelete: Cascade)
+  bug_report BugReport? @relation(fields: [bug_report_id], references: [id], onDelete: Cascade)
+  author     User       @relation("BugCommentAuthor", fields: [author_id], references: [id], onDelete: Cascade)
+
+  @@index([bug_id])
+  @@index([bug_report_id])
+  @@index([author_id])
+  @@map("bug_comments")
+}
+
+model BugAttachment {
+  id              String   @id @default(uuid())
+  project_id      String
+  bug_report_id   String?
+  bug_id          String?
+  retest_id       String?
+  uploaded_by     String
+  storage_key     String
+  original_name   String
+  sanitized_name  String
+  mime_type       String
+  file_size_bytes Int
+  checksum_sha256 String
+  created_at      DateTime @default(now())
+
+  project    Project    @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  bug_report BugReport? @relation(fields: [bug_report_id], references: [id], onDelete: Cascade)
+  bug        Bug?       @relation(fields: [bug_id], references: [id], onDelete: Cascade)
+  retest     BugRetest? @relation(fields: [retest_id], references: [id], onDelete: Cascade)
+  uploader   User       @relation("BugAttachmentUploader", fields: [uploaded_by], references: [id], onDelete: Cascade)
+
+  @@index([project_id])
+  @@index([bug_report_id])
+  @@index([bug_id])
+  @@index([retest_id])
+  @@map("bug_attachments")
+}
+
+model BugEvent {
+  id            String   @id @default(uuid())
+  bug_id        String?
+  bug_report_id String?
+  actor_id      String
+  action        String
+  from_status   String?
+  to_status     String?
+  metadata      Json?
+  created_at    DateTime @default(now())
+
+  bug        Bug?       @relation(fields: [bug_id], references: [id], onDelete: Cascade)
+  bug_report BugReport? @relation(fields: [bug_report_id], references: [id], onDelete: Cascade)
+  actor      User       @relation("BugEventActor", fields: [actor_id], references: [id], onDelete: Cascade)
+
+  @@index([bug_id])
+  @@index([bug_report_id])
+  @@index([actor_id])
+  @@map("bug_events")
 }

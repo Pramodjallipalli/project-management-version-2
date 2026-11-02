@@ -132,11 +132,30 @@ export class ProjectService {
     }
 
     const owners = Array.from(ownersMap.values());
+    const members = Array.isArray(project.members)
+      ? project.members.map((m: any) => {
+          const assignedRoles = (m.member_roles || []).map((mr: any) => mr.role_name);
+          const effectiveRoles =
+            assignedRoles.length > 0
+              ? assignedRoles
+              : m.project_role
+              ? [m.project_role]
+              : [];
+          return {
+            ...m,
+            project_role: m.project_role || effectiveRoles[0] || null,
+            project_roles: effectiveRoles,
+            roles: effectiveRoles,
+          };
+        })
+      : project.members;
+
     return {
       ...project,
       owners,
       owner_ids: owners.map((o) => o.id),
       owner: project.owner || (owners.length > 0 ? owners[0] : null),
+      members,
     };
   }
 
@@ -266,6 +285,7 @@ export class ProjectService {
                 email: true,
               },
             },
+            member_roles: true,
           },
         },
         documents: {
@@ -1036,29 +1056,44 @@ export class ProjectService {
             },
           },
         },
+        member_roles: true,
       },
     });
 
-    const result = members.map((m: any) => ({
-      user_id: m.user.id,
-      userId: m.user.id,
-      id: m.user.id,
-      name: m.user.name,
-      email: m.user.email,
-      project_role: m.project_role || null,
-      role: m.project_role || null,
-      role_id: m.role_id || m.role?.id || null,
-      role_details: m.role
-        ? {
-            id: m.role.id,
-            name: m.role.name,
-            description: m.role.description,
-            is_custom: m.role.is_custom,
-            permissions: m.role.permissions?.map((rp: any) => rp.permission.name) || [],
-          }
-        : null,
-      user: m.user,
-    }));
+    const result = members.map((m: any) => {
+      const assignedRoles = (m.member_roles || []).map((mr: any) => mr.role_name);
+      const effectiveRoles =
+        assignedRoles.length > 0
+          ? assignedRoles
+          : m.project_role
+          ? [m.project_role]
+          : [];
+      const primaryRole = m.project_role || effectiveRoles[0] || null;
+
+      return {
+        user_id: m.user.id,
+        userId: m.user.id,
+        id: m.user.id,
+        name: m.user.name,
+        email: m.user.email,
+        project_role: primaryRole,
+        project_roles: effectiveRoles,
+        roles: effectiveRoles,
+        role: primaryRole,
+        role_id: m.role_id || m.role?.id || null,
+        role_details: m.role
+          ? {
+              id: m.role.id,
+              name: m.role.name,
+              description: m.role.description,
+              is_custom: m.role.is_custom,
+              permissions: m.role.permissions?.map((rp: any) => rp.permission.name) || [],
+            }
+          : null,
+        member_roles: m.member_roles || [],
+        user: m.user,
+      };
+    });
 
     return result.sort((a, b) => {
       const aIsLead = a.project_role === 'TECH_LEAD';
@@ -1072,14 +1107,16 @@ export class ProjectService {
   }
 
   static readonly ALLOWED_PROJECT_ROLES = [
+    'BUSINESS_ANALYST',
     'DEVELOPER',
+    'DEVOPS_ENGINEER',
+    'EMPLOYEE',
+    'INTERN',
+    'MANAGER',
+    'PROJECT_COORDINATOR',
     'QA_TESTER',
     'TECH_LEAD',
     'UI_UX_DESIGNER',
-    'DEVOPS_ENGINEER',
-    'BUSINESS_ANALYST',
-    'PROJECT_COORDINATOR',
-    'MANAGER',
     'LEAD',
     'MEMBER',
   ] as const;
@@ -1236,9 +1273,33 @@ export class ProjectService {
    */
   static async ensureBuiltInProjectRoles() {
     const BUILTIN_ROLES: Record<string, { label: string; perms: string[] }> = {
+      BUSINESS_ANALYST: {
+        label: 'Business Analyst',
+        perms: ['PROJECT_READ', 'TASK_READ', 'FORM_READ', 'DOCUMENT_UPLOAD'],
+      },
       DEVELOPER: {
         label: 'Developer',
         perms: ['PROJECT_READ', 'TASK_READ', 'TASK_UPDATE', 'FORM_READ', 'FORM_SUBMIT', 'DOCUMENT_UPLOAD'],
+      },
+      DEVOPS_ENGINEER: {
+        label: 'DevOps Engineer',
+        perms: ['PROJECT_READ', 'TASK_READ', 'TASK_UPDATE', 'DOCUMENT_UPLOAD'],
+      },
+      EMPLOYEE: {
+        label: 'Employee',
+        perms: ['PROJECT_READ', 'TASK_READ', 'TASK_UPDATE', 'FORM_READ', 'FORM_SUBMIT', 'ATTENDANCE_READ', 'ATTENDANCE_CREATE'],
+      },
+      INTERN: {
+        label: 'Intern',
+        perms: ['PROJECT_READ', 'TASK_READ', 'TASK_UPDATE', 'FORM_READ', 'FORM_SUBMIT', 'ATTENDANCE_READ', 'ATTENDANCE_CREATE'],
+      },
+      MANAGER: {
+        label: 'Manager',
+        perms: ['PROJECT_READ', 'PROJECT_UPDATE', 'TASK_READ', 'TASK_CREATE', 'TASK_UPDATE', 'TASK_ASSIGN', 'FORM_READ', 'DOCUMENT_UPLOAD'],
+      },
+      PROJECT_COORDINATOR: {
+        label: 'Project Coordinator',
+        perms: ['PROJECT_READ', 'TASK_READ', 'TASK_CREATE', 'TASK_UPDATE', 'TASK_ASSIGN', 'FORM_READ', 'DOCUMENT_UPLOAD'],
       },
       QA_TESTER: {
         label: 'QA Tester',
@@ -1251,18 +1312,6 @@ export class ProjectService {
       UI_UX_DESIGNER: {
         label: 'UI/UX Designer',
         perms: ['PROJECT_READ', 'TASK_READ', 'TASK_UPDATE', 'DOCUMENT_UPLOAD'],
-      },
-      DEVOPS_ENGINEER: {
-        label: 'DevOps Engineer',
-        perms: ['PROJECT_READ', 'TASK_READ', 'TASK_UPDATE', 'DOCUMENT_UPLOAD'],
-      },
-      BUSINESS_ANALYST: {
-        label: 'Business Analyst',
-        perms: ['PROJECT_READ', 'TASK_READ', 'FORM_READ', 'DOCUMENT_UPLOAD'],
-      },
-      PROJECT_COORDINATOR: {
-        label: 'Project Coordinator',
-        perms: ['PROJECT_READ', 'TASK_READ', 'TASK_CREATE', 'TASK_UPDATE', 'TASK_ASSIGN', 'FORM_READ', 'DOCUMENT_UPLOAD'],
       },
     };
 
@@ -1561,7 +1610,12 @@ export class ProjectService {
    */
   static async updateProjectMemberRoles(
     projectId: string,
-    roleAssignments: Array<{ user_id: string; project_role?: string | null; role_id?: string | null }>,
+    roleAssignments: Array<{
+      user_id: string;
+      project_role?: string | null;
+      project_roles?: string[];
+      role_id?: string | null;
+    }>,
     user: any
   ) {
     if (!projectId || projectId === 'undefined') {
@@ -1593,9 +1647,7 @@ export class ProjectService {
     for (const item of roleAssignments) {
       if (!item.user_id) continue;
 
-      let normalizedRole: string | null = null;
-      let roleIdToPersist: string | null = null;
-
+      let requestedRoles: string[] = [];
       if (item.role_id) {
         const directRole = await prisma.role.findUnique({
           where: { id: item.role_id },
@@ -1603,7 +1655,6 @@ export class ProjectService {
         if (!directRole) {
           throw new Error(`Role not found: ${item.role_id}`);
         }
-        // Strict project scope check: custom role cannot belong to another project
         if (directRole.project_id && directRole.project_id !== projectId) {
           throw new Error(
             `Cross-project role assignment rejected: Role "${directRole.name}" is scoped to project ${directRole.project_id} and cannot be assigned in project ${projectId}.`
@@ -1612,18 +1663,27 @@ export class ProjectService {
         if (directRole.organization_id && directRole.organization_id !== project.organization_id) {
           throw new Error('Cross-organization role assignment rejected.');
         }
-        roleIdToPersist = directRole.id;
-        normalizedRole = directRole.name;
+        requestedRoles.push(directRole.name);
+      }
+      if (Array.isArray(item.project_roles)) {
+        for (const r of item.project_roles) {
+          if (typeof r === 'string' && r.trim()) requestedRoles.push(r.trim());
+        }
       } else if (item.project_role && typeof item.project_role === 'string' && item.project_role.trim()) {
-        const candidate = item.project_role.trim();
+        requestedRoles.push(item.project_role.trim());
+      }
+
+      const normalizedRoles: string[] = [];
+      for (const r of requestedRoles) {
+        const candidate = r.trim();
         const candidateUpper = candidate.toUpperCase();
 
         if (candidateUpper === 'LEAD') {
-          normalizedRole = 'TECH_LEAD';
+          normalizedRoles.push('TECH_LEAD');
         } else if (candidateUpper === 'MEMBER') {
-          normalizedRole = 'DEVELOPER';
+          normalizedRoles.push('DEVELOPER');
         } else if (this.ALLOWED_PROJECT_ROLES.includes(candidateUpper as any)) {
-          normalizedRole = candidateUpper;
+          normalizedRoles.push(candidateUpper);
         } else {
           // Check if candidate matches a custom role strictly for this project or organization
           const customRole = await prisma.role.findFirst({
@@ -1639,19 +1699,25 @@ export class ProjectService {
 
           if (!customRole) {
             throw new Error(
-              `Invalid project role: ${item.project_role}. Role not recognized or not available in this project.`
+              `Invalid project role: ${candidate}. Role not recognized or not available in this project.`
             );
           }
-          normalizedRole = customRole.name;
-          roleIdToPersist = customRole.id;
+          normalizedRoles.push(customRole.name);
         }
       }
 
-      // If we don't have roleIdToPersist yet, lookup by role name within permitted scope
-      if (!roleIdToPersist && normalizedRole) {
-        const r = await prisma.role.findFirst({
+      const uniqueRoles = Array.from(new Set(normalizedRoles));
+
+      // Choose primary role for backwards compatibility: 'TECH_LEAD' if present, otherwise first role or null
+      const primaryRole = uniqueRoles.includes('TECH_LEAD')
+        ? 'TECH_LEAD'
+        : (uniqueRoles[0] || null);
+
+      let primaryRoleId: string | null = null;
+      if (primaryRole) {
+        const rRec = await prisma.role.findFirst({
           where: {
-            name: normalizedRole,
+            name: primaryRole,
             OR: [
               { project_id: projectId },
               { organization_id: project.organization_id, project_id: null },
@@ -1659,9 +1725,7 @@ export class ProjectService {
             ],
           },
         });
-        if (r) {
-          roleIdToPersist = r.id;
-        }
+        if (rRec) primaryRoleId = rRec.id;
       }
 
       const existing = await prisma.projectMember.findUnique({
@@ -1682,8 +1746,8 @@ export class ProjectService {
             },
           },
           data: {
-            project_role: normalizedRole,
-            role_id: roleIdToPersist,
+            project_role: primaryRole,
+            role_id: primaryRoleId,
           },
         });
       } else {
@@ -1691,8 +1755,50 @@ export class ProjectService {
           data: {
             project_id: projectId,
             user_id: item.user_id,
-            project_role: normalizedRole,
-            role_id: roleIdToPersist,
+            project_role: primaryRole,
+            role_id: primaryRoleId,
+          },
+        });
+      }
+
+      // Sync project_member_roles: delete unassigned roles
+      await prisma.projectMemberRole.deleteMany({
+        where: {
+          project_id: projectId,
+          user_id: item.user_id,
+          role_name: { notIn: uniqueRoles },
+        },
+      });
+
+      // Upsert assigned roles
+      for (const roleName of uniqueRoles) {
+        const roleRec = await prisma.role.findFirst({
+          where: {
+            name: roleName,
+            OR: [
+              { project_id: projectId },
+              { organization_id: project.organization_id, project_id: null },
+              { organization_id: null, project_id: null },
+            ],
+          },
+        });
+
+        await prisma.projectMemberRole.upsert({
+          where: {
+            project_id_user_id_role_name: {
+              project_id: projectId,
+              user_id: item.user_id,
+              role_name: roleName,
+            },
+          },
+          update: {
+            role_id: roleRec?.id || null,
+          },
+          create: {
+            project_id: projectId,
+            user_id: item.user_id,
+            role_name: roleName,
+            role_id: roleRec?.id || null,
           },
         });
       }

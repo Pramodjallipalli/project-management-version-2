@@ -29,6 +29,7 @@ export const mockPrisma: any = {
   project: createModelMock(),
   projectOwner: createModelMock(),
   projectMember: createModelMock(),
+  projectMemberRole: createModelMock(),
   projectRole: createModelMock(),
   projectRolePermission: createModelMock(),
   projectDocument: createModelMock(),
@@ -47,6 +48,15 @@ export const mockPrisma: any = {
   actionItem: createModelMock(),
   auditLog: createModelMock(),
   workItemExtensionRequest: createModelMock(),
+  documentRequirement: createModelMock(),
+  bugReport: createModelMock(),
+  bugReview: createModelMock(),
+  bug: createModelMock(),
+  bugAssignment: createModelMock(),
+  bugRetest: createModelMock(),
+  bugComment: createModelMock(),
+  bugAttachment: createModelMock(),
+  bugEvent: createModelMock(),
   $transaction: jest.fn(async (arg: any) => {
     if (typeof arg === 'function') {
       return arg(mockPrisma);
