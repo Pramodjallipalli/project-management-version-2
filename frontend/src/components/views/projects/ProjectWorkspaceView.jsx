@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FolderKanban, AlertCircle } from 'lucide-react';
+import { FolderKanban, AlertCircle, ShieldCheck } from 'lucide-react';
 import ProjectOverviewTab from './ProjectOverviewTab';
 import ProjectRoadmapTab from './ProjectRoadmapTab';
 import ProjectSprintWorkspaceTab from './ProjectSprintWorkspaceTab';
@@ -8,10 +8,12 @@ import ProjectBacklogTab from './ProjectBacklogTab';
 import KanbanBoard from '../../kanban/KanbanBoard';
 import ProjectMomTab from './ProjectMomTab';
 import ProjectApprovalsTab from './ProjectApprovalsTab';
+import ProjectBugsTab from './ProjectBugsTab';
 import { projectsService } from '../../../services/projects.service';
 import { useAuth } from '../../../context/AuthContext';
 import { getProjectMethodology, getProjectTabs, isKanbanProject } from '../../../utils/methodology';
 import ProjectMethodologyBadge from './ProjectMethodologyBadge';
+import { PROJECT_ROLE_LABELS } from '../../modals/AssignProjectRolesModal';
 
 export default function ProjectWorkspaceView({ 
   projectId,
@@ -128,6 +130,50 @@ export default function ProjectWorkspaceView({
   const memberCount = liveProject?._count?.members ?? (liveProject?.members?.length ?? 0);
   const statusStr = liveProject?.status || 'PLANNED';
 
+  // Resolve current logged-in user's project membership and role(s)
+  const currentMember = useMemo(() => {
+    return (liveProject?.members || []).find((m) => {
+      const uid = m.user_id || m.user?.id || m.id;
+      return uid === currentUserId;
+    });
+  }, [liveProject, currentUserId]);
+
+  const assignedProjectRoles = useMemo(() => {
+    if (!currentMember) return [];
+    if (Array.isArray(currentMember.member_roles) && currentMember.member_roles.length > 0) {
+      return currentMember.member_roles.map((mr) => mr.role_name || mr.name);
+    }
+    if (Array.isArray(currentMember.project_roles) && currentMember.project_roles.length > 0) {
+      return currentMember.project_roles;
+    }
+    if (currentMember.project_role && currentMember.project_role.trim()) {
+      return [currentMember.project_role.trim()];
+    }
+    return [];
+  }, [currentMember]);
+
+  const roleDisplayInfo = useMemo(() => {
+    if (assignedProjectRoles.length === 0) {
+      return {
+        text: 'Your assigned role: Not Assigned',
+        isUnassigned: true,
+      };
+    }
+    const formatted = assignedProjectRoles.map(
+      (r) => PROJECT_ROLE_LABELS[r] || r.replace(/_/g, ' ')
+    );
+    if (formatted.length === 1) {
+      return {
+        text: `Your assigned role: ${formatted[0]}`,
+        isUnassigned: false,
+      };
+    }
+    return {
+      text: `Your assigned roles: ${formatted.join(', ')}`,
+      isUnassigned: false,
+    };
+  }, [assignedProjectRoles]);
+
   return (
     <div className="min-w-0 max-w-full">
       {/* PROJECT CONTEXT: METADATA & PROJECT NAVIGATION TABS */}
@@ -148,11 +194,24 @@ export default function ProjectWorkspaceView({
             <span className="text-slate-300 select-none">·</span>
             <span><strong className="text-slate-800 font-semibold">{memberCount}</strong> {memberCount === 1 ? 'Member' : 'Members'}</span>
           </div>
-          {effectiveReadOnly && (
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
-              Contributor View (Read-Only)
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border shadow-2xs transition-all ${
+                roleDisplayInfo.isUnassigned
+                  ? 'bg-slate-50 text-slate-500 border-slate-200'
+                  : 'bg-purple-50 text-purple-700 border-purple-200 ring-1 ring-purple-100'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
+              <span>{roleDisplayInfo.text}</span>
+            </div>
+
+            {effectiveReadOnly && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                Contributor View (Read-Only)
+              </span>
+            )}
+          </div>
         </div>
 
         {/* ROW 2: Project Navigation Tabs */}
@@ -223,6 +282,14 @@ export default function ProjectWorkspaceView({
           <ProjectMomTab
             projectId={projectId}
             projectName={liveProject?.name}
+            onToast={onToast}
+            readOnly={effectiveReadOnly}
+          />
+        ) : currentTab === 'bugs' ? (
+          <ProjectBugsTab
+            projectId={projectId}
+            projectName={liveProject?.name}
+            project={liveProject}
             onToast={onToast}
             readOnly={effectiveReadOnly}
           />

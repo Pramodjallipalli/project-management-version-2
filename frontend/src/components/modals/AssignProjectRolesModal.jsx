@@ -6,23 +6,29 @@ import AddCustomRoleModal from './AddCustomRoleModal';
 
 export const PROJECT_ROLES = [
   { value: '', label: 'Not Assigned' },
+  { value: 'BUSINESS_ANALYST', label: 'Business Analyst' },
   { value: 'DEVELOPER', label: 'Developer' },
+  { value: 'DEVOPS_ENGINEER', label: 'DevOps Engineer' },
+  { value: 'EMPLOYEE', label: 'Employee' },
+  { value: 'INTERN', label: 'Intern' },
+  { value: 'MANAGER', label: 'Manager' },
+  { value: 'PROJECT_COORDINATOR', label: 'Project Coordinator' },
   { value: 'QA_TESTER', label: 'QA Tester' },
   { value: 'TECH_LEAD', label: 'Tech Lead' },
   { value: 'UI_UX_DESIGNER', label: 'UI/UX Designer' },
-  { value: 'DEVOPS_ENGINEER', label: 'DevOps Engineer' },
-  { value: 'BUSINESS_ANALYST', label: 'Business Analyst' },
-  { value: 'PROJECT_COORDINATOR', label: 'Project Coordinator' },
 ];
 
 export const PROJECT_ROLE_LABELS = {
+  BUSINESS_ANALYST: 'Business Analyst',
   DEVELOPER: 'Developer',
+  DEVOPS_ENGINEER: 'DevOps Engineer',
+  EMPLOYEE: 'Employee',
+  INTERN: 'Intern',
+  MANAGER: 'Manager',
+  PROJECT_COORDINATOR: 'Project Coordinator',
   QA_TESTER: 'QA Tester',
   TECH_LEAD: 'Tech Lead',
   UI_UX_DESIGNER: 'UI/UX Designer',
-  DEVOPS_ENGINEER: 'DevOps Engineer',
-  BUSINESS_ANALYST: 'Business Analyst',
-  PROJECT_COORDINATOR: 'Project Coordinator',
 };
 
 export default function AssignProjectRolesModal({
@@ -62,7 +68,15 @@ export default function AssignProjectRolesModal({
       members.forEach((m) => {
         const uid = m.user_id || m.user?.id || m.id;
         if (uid) {
-          initialMap[uid] = m.project_role || '';
+          if (Array.isArray(m.project_roles) && m.project_roles.length > 0) {
+            initialMap[uid] = [...m.project_roles];
+          } else if (Array.isArray(m.member_roles) && m.member_roles.length > 0) {
+            initialMap[uid] = m.member_roles.map((mr) => mr.role_name);
+          } else if (m.project_role && m.project_role.trim()) {
+            initialMap[uid] = [m.project_role.trim()];
+          } else {
+            initialMap[uid] = [];
+          }
         }
       });
       setRoleMap(initialMap);
@@ -103,8 +117,10 @@ export default function AssignProjectRolesModal({
     }) : [...members];
 
     return list.sort((a, b) => {
-      const aIsLead = (roleMap[a.user_id] || a.project_role || a.role) === 'TECH_LEAD';
-      const bIsLead = (roleMap[b.user_id] || b.project_role || b.role) === 'TECH_LEAD';
+      const aRoles = roleMap[a.user_id] || a.project_roles || (a.project_role ? [a.project_role] : []);
+      const bRoles = roleMap[b.user_id] || b.project_roles || (b.project_role ? [b.project_role] : []);
+      const aIsLead = aRoles.includes('TECH_LEAD');
+      const bIsLead = bRoles.includes('TECH_LEAD');
       if (aIsLead && !bIsLead) return -1;
       if (!aIsLead && bIsLead) return 1;
       const nameA = a.name || a.user?.name || a.email || '';
@@ -115,11 +131,26 @@ export default function AssignProjectRolesModal({
 
   if (!isOpen) return null;
 
-  const handleRoleChange = (userId, newRole) => {
-    setRoleMap((prev) => ({
-      ...prev,
-      [userId]: newRole,
-    }));
+  const handleAddRole = (userId, newRole) => {
+    if (!newRole) return;
+    setRoleMap((prev) => {
+      const current = prev[userId] || [];
+      if (current.includes(newRole)) return prev;
+      return {
+        ...prev,
+        [userId]: [...current, newRole],
+      };
+    });
+  };
+
+  const handleRemoveRole = (userId, roleToRemove) => {
+    setRoleMap((prev) => {
+      const current = prev[userId] || [];
+      return {
+        ...prev,
+        [userId]: current.filter((r) => r !== roleToRemove),
+      };
+    });
   };
 
   const handleSave = async (e) => {
@@ -132,10 +163,11 @@ export default function AssignProjectRolesModal({
     try {
       const roleAssignments = members.map((m) => {
         const uid = m.user_id || m.user?.id || m.id;
-        const assignedRole = roleMap[uid];
+        const assignedRoles = roleMap[uid] || [];
         return {
           user_id: uid,
-          project_role: assignedRole && assignedRole.trim() ? assignedRole.trim() : null,
+          project_roles: assignedRoles,
+          project_role: assignedRoles[0] || null,
         };
       });
 
@@ -254,7 +286,7 @@ export default function AssignProjectRolesModal({
                 const mName = member.name || member.user?.name || member.email || 'Member';
                 const mEmail = member.email || member.user?.email || '';
                 const mAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(mName)}&background=random`;
-                const currentRoleValue = roleMap[uid] || '';
+                const assignedRoles = roleMap[uid] || [];
 
                 return (
                   <div
@@ -279,35 +311,73 @@ export default function AssignProjectRolesModal({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                      <label htmlFor={`role-select-${uid}`} className="sr-only">
-                        Project Role for {mName}
-                      </label>
-                      <select
-                        id={`role-select-${uid}`}
-                        value={currentRoleValue}
-                        onChange={(e) => handleRoleChange(uid, e.target.value)}
-                        disabled={saving}
-                        className="px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all cursor-pointer shadow-2xs"
-                      >
-                        <option value="">Not Assigned</option>
-                        {customRoles.length > 0 && (
-                          <optgroup label="Custom Project Roles">
-                            {customRoles.map((role) => (
-                              <option key={role.value} value={role.value}>
-                                {role.label}
-                              </option>
-                            ))}
-                          </optgroup>
+                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 self-start sm:self-center shrink-0">
+                      {/* Assigned Role Tags */}
+                      <div className="flex flex-wrap items-center gap-1.5 max-w-xs">
+                        {assignedRoles.length === 0 ? (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                            Not Assigned
+                          </span>
+                        ) : (
+                          assignedRoles.map((roleKey) => (
+                            <span
+                              key={roleKey}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 shadow-2xs"
+                            >
+                              <span>{PROJECT_ROLE_LABELS[roleKey] || roleKey.replace(/_/g, ' ')}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveRole(uid, roleKey)}
+                                disabled={saving}
+                                className="text-purple-400 hover:text-purple-700 hover:bg-purple-100 rounded-sm p-0.5 cursor-pointer"
+                                title={`Remove ${PROJECT_ROLE_LABELS[roleKey] || roleKey}`}
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </span>
+                          ))
                         )}
-                        <optgroup label="Standard Roles">
-                          {standardRoles.map((role) => (
-                            <option key={role.value} value={role.value}>
-                              {role.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      </select>
+                      </div>
+
+                      {/* Add Role Dropdown */}
+                      <div className="relative shrink-0">
+                        <label htmlFor={`role-add-${uid}`} className="sr-only">
+                          Add Role for {mName}
+                        </label>
+                        <select
+                          id={`role-add-${uid}`}
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleAddRole(uid, e.target.value);
+                            }
+                          }}
+                          disabled={saving}
+                          className="px-2.5 py-1 text-[11px] font-semibold bg-white border border-purple-200 rounded-lg text-purple-700 hover:bg-purple-50 focus:outline-hidden focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all cursor-pointer shadow-2xs"
+                        >
+                          <option value="" disabled>+ Add Role...</option>
+                          {customRoles.filter((r) => !assignedRoles.includes(r.value)).length > 0 && (
+                            <optgroup label="Custom Project Roles">
+                              {customRoles
+                                .filter((r) => !assignedRoles.includes(r.value))
+                                .map((role) => (
+                                  <option key={role.value} value={role.value}>
+                                    {role.label}
+                                  </option>
+                                ))}
+                            </optgroup>
+                          )}
+                          <optgroup label="Standard Roles">
+                            {standardRoles
+                              .filter((r) => !assignedRoles.includes(r.value))
+                              .map((role) => (
+                                <option key={role.value} value={role.value}>
+                                  {role.label}
+                                </option>
+                              ))}
+                          </optgroup>
+                        </select>
+                      </div>
                     </div>
                   </div>
                 );

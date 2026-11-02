@@ -281,6 +281,9 @@ export class ProjectController {
       const normalizedAssignments = rawRoles.map((r: any) => ({
         user_id: r.user_id || r.userId || r.id,
         project_role: r.project_role || r.role || r.projectRole,
+        project_roles: Array.isArray(r.project_roles || r.roles)
+          ? (r.project_roles || r.roles)
+          : (r.project_role || r.role || r.projectRole ? [r.project_role || r.role || r.projectRole] : []),
       }));
 
       const members = await ProjectService.updateProjectMemberRoles(id, normalizedAssignments, user);

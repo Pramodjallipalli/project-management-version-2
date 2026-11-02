@@ -838,6 +838,12 @@ export class OrganizationService {
       totalUsers,
       totalProjects,
       recentLogsResult,
+      totalBugReports,
+      pendingComplaints,
+      activeBugs,
+      closedBugs,
+      projectRoleCounts,
+      globalRoles,
     ] = await Promise.all([
       prisma.organization.count(),
       prisma.organization.count({ where: { is_active: true } }),
@@ -856,6 +862,23 @@ export class OrganizationService {
       }),
       prisma.project.count(),
       AuditService.listLogs({ page: 1, limit: 5 }),
+      prisma.bugReport.count(),
+      prisma.bugReport.count({ where: { status: 'PENDING_REVIEW' } }),
+      prisma.bug.count({ where: { status: { notIn: ['CLOSED'] } } }),
+      prisma.bug.count({ where: { status: 'CLOSED' } }),
+      prisma.projectMemberRole.groupBy({
+        by: ['role_name'],
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+      }),
+      prisma.role.findMany({
+        select: {
+          id: true,
+          name: true,
+          _count: { select: { users: true } },
+        },
+        orderBy: { name: 'asc' },
+      }),
     ]);
 
     const activePercentage =
@@ -878,6 +901,25 @@ export class OrganizationService {
         suspended: suspendedOrganizations,
         activePercentage,
         suspendedPercentage,
+      },
+      bugPortalSummary: {
+        totalComplaints: totalBugReports,
+        pendingReview: pendingComplaints,
+        activeBugs,
+        closedBugs,
+        verifiedRate: totalBugReports > 0 ? Math.round(((totalBugReports - pendingComplaints) / totalBugReports) * 100) : 0,
+      },
+      rolesSummary: {
+        totalProjectRoles: projectRoleCounts.reduce((acc, curr) => acc + curr._count.id, 0),
+        projectRoleDistribution: projectRoleCounts.map((prc) => ({
+          role_name: prc.role_name,
+          count: prc._count.id,
+        })),
+        globalRoles: globalRoles.map((gr) => ({
+          id: gr.id,
+          name: gr.name,
+          userCount: gr._count.users,
+        })),
       },
       recentActivity: recentLogsResult.logs || [],
     };

@@ -39,12 +39,20 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
 
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    let token: string | undefined;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    } else if (typeof req.query.token === 'string' && req.query.token.trim()) {
+      token = req.query.token.trim();
+    } else if (req.cookies && req.cookies.access_token) {
+      token = req.cookies.access_token;
+    }
+
+    if (!token) {
       res.status(401).json({ error: 'Missing or invalid authorization header' });
       return;
     }
-
-    const token = authHeader.split(' ')[1];
     let payload: any;
     try {
       payload = jwt.verify(token, ACCESS_SECRET) as any;

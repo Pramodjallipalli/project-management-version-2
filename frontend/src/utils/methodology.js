@@ -72,6 +72,7 @@ export function getProjectTabs(projectOrMethodology, { isIntern = false } = {}) 
         { id: 'backlog', label: 'Backlog' },
         { id: 'kanban', label: 'Kanban Board' },
         { id: 'action-items', label: 'Action Items' },
+        { id: 'bugs', label: 'Bugs' },
         { id: 'approvals', label: 'Approvals' },
       ]
     : [
@@ -81,6 +82,7 @@ export function getProjectTabs(projectOrMethodology, { isIntern = false } = {}) 
         { id: 'backlog', label: 'Backlog' },
         { id: 'scrum', label: 'Scrum Board' },
         { id: 'action-items', label: 'Action Items' },
+        { id: 'bugs', label: 'Bugs' },
         { id: 'approvals', label: 'Approvals' },
       ];
 
@@ -90,4 +92,3 @@ export function getProjectTabs(projectOrMethodology, { isIntern = false } = {}) 
 
   return tabs;
 }
-
