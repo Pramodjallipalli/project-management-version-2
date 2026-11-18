@@ -12,7 +12,7 @@ async function main() {
       IF NOT EXISTS (
         SELECT 1 FROM pg_constraint WHERE conname = 'bug_reports_assigned_qa_id_fkey'
       ) THEN
-        ALTER TABLE "bug_reports" ADD CONSTRAINT "bug_reports_assigned_qa_id_fkey" 
+        ALTER TABLE "bug_reports" ADD CONSTRAINT "bug_reports_assigned_qa_id_fkey"
         FOREIGN KEY ("assigned_qa_id") REFERENCES "users"("id") ON DELETE SET NULL;
       END IF;
     END $$;

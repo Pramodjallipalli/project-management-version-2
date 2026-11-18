@@ -23,7 +23,7 @@ async function main() {
   console.log('Migrating existing single-role project members into project_member_roles...');
   const migrated = await prisma.$executeRawUnsafe(`
     INSERT INTO "project_member_roles" ("id", "project_id", "user_id", "role_name", "role_id", "created_at")
-    SELECT 
+    SELECT
       gen_random_uuid()::text,
       "project_id",
       "user_id",
