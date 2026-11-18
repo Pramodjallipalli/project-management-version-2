@@ -3,17 +3,41 @@ import path from 'path';
 import os from 'os';
 import { StorageService } from '../../src/services/storage.service';
 
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: jest.fn(() => ({
+    storage: {
+      from: jest.fn(() => ({
+        upload: jest.fn().mockResolvedValue({ data: { path: 'uploaded' }, error: null }),
+        download: jest.fn(),
+        remove: jest.fn().mockResolvedValue({ data: null, error: null }),
+      })),
+    },
+  })),
+}));
+
 describe('StorageService', () => {
   let tempStorageDir: string;
   const originalEnvStorage = process.env.STORAGE_PATH;
+  const originalSupabaseUrl = process.env.SUPABASE_URL;
+  const originalSupabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const originalSupabaseBucket = process.env.SUPABASE_BUCKET;
 
   beforeEach(() => {
     tempStorageDir = path.join(os.tmpdir(), `test-storage-${Date.now()}-${Math.random().toString(36).substring(7)}`);
     process.env.STORAGE_PATH = tempStorageDir;
+    process.env.SUPABASE_URL = 'https://example.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+    process.env.SUPABASE_BUCKET = 'bug-attachments';
   });
 
   afterEach(async () => {
     process.env.STORAGE_PATH = originalEnvStorage;
+    if (originalSupabaseUrl === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = originalSupabaseUrl;
+    if (originalSupabaseKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = originalSupabaseKey;
+    if (originalSupabaseBucket === undefined) delete process.env.SUPABASE_BUCKET;
+    else process.env.SUPABASE_BUCKET = originalSupabaseBucket;
     try {
       if (fs.existsSync(tempStorageDir)) {
         await fs.promises.rm(tempStorageDir, { recursive: true, force: true });
@@ -39,18 +63,23 @@ describe('StorageService', () => {
   });
 
   describe('saveProjectFile', () => {
+    it('requires Supabase configuration instead of silently using local storage', async () => {
+      delete process.env.SUPABASE_URL;
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+      await expect(
+        StorageService.saveProjectFile('proj-123', 'my report.pdf', Buffer.from('hello'))
+      ).rejects.toThrow('Supabase Storage is not configured');
+    });
+
     it('saves a file and returns storageKey and unique filename', async () => {
       const buffer = Buffer.from('hello world content');
       const result = await StorageService.saveProjectFile('proj-123', 'my report #1!.pdf', buffer);
 
       expect(result).toHaveProperty('storageKey');
       expect(result).toHaveProperty('filename');
-      expect(result.storageKey).toMatch(/^projects\/proj-123\//);
+      expect(result.storageKey).toMatch(/^supabase:\/\/bug-attachments\/projects\/proj-123\//);
       expect(result.filename).toMatch(/my_report__1_\.pdf$/);
-
-      const filePath = StorageService.getFilePath(result.storageKey, true);
-      const readContent = await fs.promises.readFile(filePath);
-      expect(readContent.toString()).toBe('hello world content');
     });
 
     it('handles files without extensions and filenames longer than 50 chars', async () => {
@@ -63,7 +92,7 @@ describe('StorageService', () => {
     it('throws error on path traversal attempts in projectId', async () => {
       await expect(
         StorageService.saveProjectFile('../../../etc', 'exploit.txt', Buffer.from('danger'))
-      ).rejects.toThrow('Invalid file storage path');
+      ).rejects.toThrow('Invalid projectId format');
     });
   });
 
@@ -86,8 +115,11 @@ describe('StorageService', () => {
     });
 
     it('returns resolved path using default checkExists=true when file exists', async () => {
-      const saved = await StorageService.saveProjectFile('proj-default', 'exists.txt', Buffer.from('data'));
-      const resolved = StorageService.getFilePath(saved.storageKey);
+      const storageRoot = StorageService.getStorageRoot();
+      const targetPath = path.join(storageRoot, 'projects', 'proj-default', 'exists.txt');
+      await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+      await fs.promises.writeFile(targetPath, 'exists');
+      const resolved = StorageService.getFilePath('projects/proj-default/exists.txt');
       expect(resolved).toBeTruthy();
     });
   });
@@ -103,11 +135,13 @@ describe('StorageService', () => {
     });
 
     it('deletes an existing file successfully', async () => {
-      const saved = await StorageService.saveProjectFile('proj-del', 'delete-me.txt', Buffer.from('data'));
-      const fullPath = StorageService.getFilePath(saved.storageKey, true);
+      const storageRoot = StorageService.getStorageRoot();
+      const fullPath = path.join(storageRoot, 'projects', 'proj-del', 'delete-me.txt');
+      await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
+      await fs.promises.writeFile(fullPath, 'delete me');
       expect(fs.existsSync(fullPath)).toBe(true);
 
-      await StorageService.deleteFile(saved.storageKey);
+      await StorageService.deleteFile('projects/proj-del/delete-me.txt');
       expect(fs.existsSync(fullPath)).toBe(false);
     });
 
@@ -144,4 +178,3 @@ describe('StorageService', () => {
     });
   });
 });
-

@@ -40,7 +40,7 @@ docker compose up -d --build
 
 # 5. Apply Prisma database migrations & seed baseline data
 docker compose exec backend npx prisma migrate deploy
-docker compose exec backend npm run seed
+docker compose exec backend npx prisma db seed
 
 # 6. Start Frontend Development Server
 cd frontend

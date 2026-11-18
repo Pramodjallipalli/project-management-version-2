@@ -401,6 +401,11 @@ export class ProjectController {
           res.setHeader('Content-Length', fileData.contentLength);
         }
         fileData.s3Stream.pipe(res);
+      } else if (fileData.buffer) {
+        if (fileData.contentLength) {
+          res.setHeader('Content-Length', fileData.contentLength);
+        }
+        res.send(fileData.buffer);
       } else if (fileData.filePath) {
         res.download(fileData.filePath, fileData.document.name);
       }
@@ -424,6 +429,11 @@ export class ProjectController {
           res.setHeader('Content-Length', fileData.contentLength);
         }
         fileData.s3Stream.pipe(res);
+      } else if (fileData.buffer) {
+        if (fileData.contentLength) {
+          res.setHeader('Content-Length', fileData.contentLength);
+        }
+        res.send(fileData.buffer);
       } else if (fileData.filePath) {
         res.sendFile(fileData.filePath);
       }
@@ -490,4 +500,3 @@ export class ProjectController {
     }
   }
 }
-

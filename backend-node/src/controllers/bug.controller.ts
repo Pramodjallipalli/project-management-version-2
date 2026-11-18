@@ -237,7 +237,14 @@ export class BugController {
       res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(fileData.filename)}"`);
       res.setHeader('Cache-Control', 'private, max-age=3600');
 
-      res.sendFile(fileData.filePath);
+      if (fileData.buffer) {
+        if (fileData.contentLength) {
+          res.setHeader('Content-Length', fileData.contentLength);
+        }
+        res.send(fileData.buffer);
+      } else {
+        res.sendFile(fileData.filePath);
+      }
     } catch (err) {
       BugController.handleError(res, err);
     }

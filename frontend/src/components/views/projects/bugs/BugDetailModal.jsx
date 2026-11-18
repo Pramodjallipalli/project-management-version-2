@@ -91,6 +91,7 @@ export default function BugDetailModal({
 
   useEffect(() => {
     if (isOpen && bugId) {
+      setBrokenImages({});
       fetchBug();
     }
   }, [isOpen, bugId]);

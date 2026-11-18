@@ -269,7 +269,8 @@ export class BugService {
         const { storageKey, filename } = await StorageService.saveProjectFile(
           projectId,
           item.file.originalname,
-          item.file.buffer
+          item.file.buffer,
+          item.sig.mime
         );
 
         await tx.bugAttachment.create({
@@ -589,7 +590,8 @@ export class BugService {
         const { storageKey, filename } = await StorageService.saveProjectFile(
           projectId,
           item.file.originalname,
-          item.file.buffer
+          item.file.buffer,
+          item.sig.mime
         );
         await tx.bugAttachment.create({
           data: {
@@ -990,7 +992,8 @@ export class BugService {
         const { storageKey, filename } = await StorageService.saveProjectFile(
           projectId,
           item.file.originalname,
-          item.file.buffer
+          item.file.buffer,
+          item.sig.mime
         );
         await tx.bugAttachment.create({
           data: {
@@ -1089,6 +1092,17 @@ export class BugService {
 
     if (!attachment) {
       throw new Error('Attachment not found');
+    }
+
+    if (StorageService.isSupabaseKey(attachment.storage_key)) {
+      const downloaded = await StorageService.downloadSupabaseFile(attachment.storage_key);
+      return {
+        attachment,
+        buffer: downloaded.buffer,
+        mimeType: attachment.mime_type || downloaded.mimeType,
+        filename: attachment.original_name,
+        contentLength: downloaded.size,
+      };
     }
 
     const filePath = StorageService.getFilePath(attachment.storage_key, true);

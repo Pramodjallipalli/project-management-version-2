@@ -3,6 +3,8 @@ import path from 'path';
 import { ProjectStatus, ProjectMethodology } from '@prisma/client';
 import { prisma } from '../../src/lib/prisma';
 import { StorageService } from '../../src/services/storage.service';
+import { ObjectStorageService } from '../../src/services/object-storage.service';
+import { ProjectFile } from '../../src/models/project-file.model';
 import { ProjectService } from '../../src/services/project.service';
 
 jest.mock('fs', () => ({
@@ -72,10 +74,28 @@ jest.mock('../../src/lib/prisma', () => ({
 
 jest.mock('../../src/services/storage.service', () => ({
   StorageService: {
-    saveProjectFile: jest.fn().mockResolvedValue({ storageKey: 'projects/p-1/spec.pdf' }),
+    saveProjectFile: jest.fn().mockResolvedValue({
+      storageKey: 'supabase://bug-attachments/projects/p-1/spec.pdf',
+      filename: 'spec.pdf',
+    }),
     deleteFile: jest.fn().mockResolvedValue(true),
     getStorageRoot: jest.fn().mockReturnValue(path.resolve('./test-storage')),
     getMimeType: jest.fn().mockReturnValue('application/pdf'),
+    isSupabaseKey: jest.fn().mockImplementation((key: string) => typeof key === 'string' && key.startsWith('supabase://')),
+    downloadSupabaseFile: jest.fn(),
+  },
+}));
+
+jest.mock('../../src/services/object-storage.service', () => ({
+  ObjectStorageService: {
+    uploadBuffer: jest.fn(),
+    deleteObject: jest.fn().mockResolvedValue(undefined),
+  },
+}));
+
+jest.mock('../../src/models/project-file.model', () => ({
+  ProjectFile: {
+    create: jest.fn(),
   },
 }));
 
@@ -94,6 +114,9 @@ describe('ProjectService Unit Tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.ENABLE_MONGODB_PROJECT_FILES;
+    delete process.env.STORAGE_DRIVER;
+    delete process.env.REVERSE_SYNC_TO_POSTGRES;
   });
 
   describe('listProjects', () => {
@@ -653,6 +676,160 @@ describe('ProjectService Unit Tests', () => {
       );
 
       expect(doc.name).toBe('Architecture.pdf');
+    });
+
+    it('uses ObjectStorageService for MongoDB project files when STORAGE_DRIVER=s3', async () => {
+      process.env.ENABLE_MONGODB_PROJECT_FILES = 'true';
+      process.env.STORAGE_DRIVER = 's3';
+
+      (prisma.project.findFirst as jest.Mock).mockResolvedValue({ id: 'p-1', organization_id: 'org-1' });
+      (ObjectStorageService.uploadBuffer as jest.Mock).mockResolvedValue({
+        storageKey: 'projects/p-1/spec.pdf',
+        sanitizedFilename: 'uuid-spec.pdf',
+        mimeType: 'application/pdf',
+        byteLength: 11,
+        checksumSha256: 's3-checksum',
+      });
+      (ProjectFile.create as jest.Mock).mockResolvedValue({
+        file_id: 'mongo-doc-1',
+        project_id: 'p-1',
+        name: 'uuid-spec.pdf',
+        document_type: 'pdf',
+        storage_key: 'projects/p-1/spec.pdf',
+        mime_type: 'application/pdf',
+        file_size_bytes: 11,
+        checksum_sha256: 's3-checksum',
+      });
+
+      const result = await ProjectService.uploadProjectDocumentWithFile(
+        'p-1',
+        { originalname: 'spec.pdf', buffer: Buffer.alloc(11, 1), mimetype: 'application/pdf' },
+        mockOrgUser
+      );
+
+      expect(ObjectStorageService.uploadBuffer).toHaveBeenCalledWith(
+        'p-1',
+        'spec.pdf',
+        expect.any(Buffer),
+        'application/pdf'
+      );
+      expect(StorageService.saveProjectFile).not.toHaveBeenCalled();
+      expect(ProjectFile.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          storage_provider: 's3',
+          storage_key: 'projects/p-1/spec.pdf',
+          mime_type: 'application/pdf',
+          file_size_bytes: 11,
+          checksum_sha256: 's3-checksum',
+        })
+      );
+      expect(result.storage_key).toBe('projects/p-1/spec.pdf');
+
+      delete process.env.ENABLE_MONGODB_PROJECT_FILES;
+      delete process.env.STORAGE_DRIVER;
+    });
+
+    it('uses Supabase Storage for MongoDB project files otherwise', async () => {
+      process.env.ENABLE_MONGODB_PROJECT_FILES = 'true';
+      process.env.STORAGE_DRIVER = 'supabase';
+      process.env.REVERSE_SYNC_TO_POSTGRES = 'true';
+
+      (prisma.project.findFirst as jest.Mock).mockResolvedValue({ id: 'p-1', organization_id: 'org-1' });
+      (StorageService.saveProjectFile as jest.Mock).mockResolvedValue({
+        storageKey: 'supabase://bug-attachments/projects/p-1/spec.pdf',
+        filename: 'uuid-spec.pdf',
+      });
+      (ProjectFile.create as jest.Mock).mockResolvedValue({
+        file_id: 'mongo-doc-2',
+        project_id: 'p-1',
+        name: 'uuid-spec.pdf',
+        document_type: 'pdf',
+        storage_key: 'supabase://bug-attachments/projects/p-1/spec.pdf',
+        mime_type: 'application/pdf',
+        file_size_bytes: 11,
+        checksum_sha256: expect.any(String),
+      });
+
+      const result = await ProjectService.uploadProjectDocumentWithFile(
+        'p-1',
+        { originalname: 'spec.pdf', buffer: Buffer.alloc(11, 1), mimetype: 'application/pdf' },
+        mockOrgUser
+      );
+
+      expect(StorageService.saveProjectFile).toHaveBeenCalledWith(
+        'p-1',
+        'spec.pdf',
+        expect.any(Buffer),
+        'application/pdf'
+      );
+      expect(ObjectStorageService.uploadBuffer).not.toHaveBeenCalled();
+      expect(ProjectFile.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          storage_provider: 'supabase',
+          storage_key: 'supabase://bug-attachments/projects/p-1/spec.pdf',
+          mime_type: 'application/pdf',
+          file_size_bytes: 11,
+          checksum_sha256: expect.any(String),
+        })
+      );
+      expect(prisma.projectDocument.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          storage_key: 'supabase://bug-attachments/projects/p-1/spec.pdf',
+        }),
+      });
+      expect(result.storage_key).toBe('supabase://bug-attachments/projects/p-1/spec.pdf');
+
+      delete process.env.ENABLE_MONGODB_PROJECT_FILES;
+      delete process.env.STORAGE_DRIVER;
+    });
+
+    it('deletes an S3 object when MongoDB metadata creation fails', async () => {
+      process.env.ENABLE_MONGODB_PROJECT_FILES = 'true';
+      process.env.STORAGE_DRIVER = 's3';
+
+      (prisma.project.findFirst as jest.Mock).mockResolvedValue({ id: 'p-1', organization_id: 'org-1' });
+      (ObjectStorageService.uploadBuffer as jest.Mock).mockResolvedValue({
+        storageKey: 'projects/p-1/spec.pdf',
+        sanitizedFilename: 'uuid-spec.pdf',
+        mimeType: 'application/pdf',
+        byteLength: 11,
+        checksumSha256: 's3-checksum',
+      });
+      (ProjectFile.create as jest.Mock).mockRejectedValue(new Error('Mongo insert failed'));
+
+      await expect(
+        ProjectService.uploadProjectDocumentWithFile(
+          'p-1',
+          { originalname: 'spec.pdf', buffer: Buffer.alloc(11, 1), mimetype: 'application/pdf' },
+          mockOrgUser
+        )
+      ).rejects.toThrow('Mongo insert failed');
+
+      expect(ObjectStorageService.deleteObject).toHaveBeenCalledWith('projects/p-1/spec.pdf');
+    });
+
+    it('deletes a Supabase object when MongoDB metadata creation fails', async () => {
+      process.env.ENABLE_MONGODB_PROJECT_FILES = 'true';
+      process.env.STORAGE_DRIVER = 'supabase';
+
+      (prisma.project.findFirst as jest.Mock).mockResolvedValue({ id: 'p-1', organization_id: 'org-1' });
+      (StorageService.saveProjectFile as jest.Mock).mockResolvedValue({
+        storageKey: 'supabase://bug-attachments/projects/p-1/spec.pdf',
+        filename: 'uuid-spec.pdf',
+      });
+      (ProjectFile.create as jest.Mock).mockRejectedValue(new Error('Mongo insert failed'));
+
+      await expect(
+        ProjectService.uploadProjectDocumentWithFile(
+          'p-1',
+          { originalname: 'spec.pdf', buffer: Buffer.alloc(11, 1), mimetype: 'application/pdf' },
+          mockOrgUser
+        )
+      ).rejects.toThrow('Mongo insert failed');
+
+      expect(StorageService.deleteFile).toHaveBeenCalledWith(
+        'supabase://bug-attachments/projects/p-1/spec.pdf'
+      );
     });
 
     it('should retrieve physical document file for download', async () => {

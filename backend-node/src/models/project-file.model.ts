@@ -9,7 +9,7 @@ export interface IProjectFile extends Document {
   document_type: string;        // Normalized extension (e.g., "pdf", "png")
   mime_type: string;            // Validated MIME type (e.g., "application/pdf")
   file_size_bytes: number;      // Exact file size in bytes
-  storage_provider: 's3' | 'local';
+  storage_provider: 'supabase' | 's3' | 'local';
   storage_key: string;          // Immutable object storage key
   checksum_sha256: string;      // Hex-encoded SHA-256 digest
   uploaded_by: string;          // PostgreSQL User UUID
@@ -62,7 +62,7 @@ export const ProjectFileSchema = new Schema<IProjectFile>(
     },
     storage_provider: {
       type: String,
-      enum: ['s3', 'local'],
+      enum: ['supabase', 's3', 'local'],
       default: 's3',
       required: true,
     },

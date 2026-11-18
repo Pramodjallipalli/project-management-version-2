@@ -2231,12 +2231,40 @@ export class ProjectService {
     const ext = extMatch ? extMatch.toLowerCase() : 'bin';
     
     if (process.env.ENABLE_MONGODB_PROJECT_FILES === 'true') {
-      const uploadResult = await ObjectStorageService.uploadBuffer(
-        projectId,
-        file.originalname,
-        file.buffer,
-        file.mimetype || 'application/octet-stream'
-      );
+      let storageKey: string;
+      let sanitizedFilename: string;
+      let mimeType: string;
+      let byteLength: number;
+      let checksumSha256: string;
+      let storageProvider: 's3' | 'supabase';
+
+      if (process.env.STORAGE_DRIVER === 's3') {
+        const uploadResult = await ObjectStorageService.uploadBuffer(
+          projectId,
+          file.originalname,
+          file.buffer,
+          file.mimetype || 'application/octet-stream'
+        );
+        storageKey = uploadResult.storageKey;
+        sanitizedFilename = uploadResult.sanitizedFilename;
+        mimeType = uploadResult.mimeType;
+        byteLength = uploadResult.byteLength;
+        checksumSha256 = uploadResult.checksumSha256;
+        storageProvider = 's3';
+      } else {
+        const uploadResult = await StorageService.saveProjectFile(
+          projectId,
+          file.originalname,
+          file.buffer,
+          file.mimetype || 'application/octet-stream'
+        );
+        storageKey = uploadResult.storageKey;
+        sanitizedFilename = uploadResult.filename;
+        mimeType = file.mimetype || StorageService.getMimeType(file.originalname);
+        byteLength = file.buffer.length;
+        checksumSha256 = crypto.createHash('sha256').update(file.buffer).digest('hex');
+        storageProvider = 'supabase';
+      }
 
       const fileId = crypto.randomUUID();
 
@@ -2246,20 +2274,23 @@ export class ProjectService {
           file_id: fileId,
           project_id: projectId,
           organization_id: project.organization_id,
-          name: uploadResult.sanitizedFilename,
+          name: sanitizedFilename,
           original_name: file.originalname,
           document_type: ext,
-          mime_type: uploadResult.mimeType,
-          file_size_bytes: uploadResult.byteLength,
-          storage_provider: 's3',
-          storage_key: uploadResult.storageKey,
-          checksum_sha256: uploadResult.checksumSha256,
+          mime_type: mimeType,
+          file_size_bytes: byteLength,
+          storage_provider: storageProvider,
+          storage_key: storageKey,
+          checksum_sha256: checksumSha256,
           uploaded_by: user.id || 'system',
           is_archived: false,
         });
       } catch (dbErr) {
-        // Compensating action: clean up S3 object on MongoDB insert failure
-        await ObjectStorageService.deleteObject(uploadResult.storageKey).catch(() => {});
+        if (storageProvider === 's3') {
+          await ObjectStorageService.deleteObject(storageKey).catch(() => {});
+        } else {
+          await StorageService.deleteFile(storageKey).catch(() => {});
+        }
         throw dbErr;
       }
 
@@ -2270,9 +2301,9 @@ export class ProjectService {
             data: {
               id: fileId,
               project_id: projectId,
-              name: uploadResult.sanitizedFilename,
+              name: sanitizedFilename,
               document_type: ext,
-              storage_key: uploadResult.storageKey,
+              storage_key: storageKey,
             },
           });
         } catch (syncErr) {
@@ -2468,6 +2499,16 @@ export class ProjectService {
     }
     if (!document) {
       throw new Error('Document not found in project');
+    }
+
+    if (StorageService.isSupabaseKey(document.storage_key)) {
+      const downloaded = await StorageService.downloadSupabaseFile(document.storage_key);
+      return {
+        buffer: downloaded.buffer,
+        document,
+        mimeType: downloaded.mimeType,
+        contentLength: downloaded.size,
+      };
     }
 
     // Check if storage_key exists in S3 (e.g. after migration or dual-write)
